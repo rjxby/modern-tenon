@@ -11,6 +11,6 @@ public record UpdateProductRequest
     public string? Name { get; init; }
 
     [Required]
-    [Range(0.01, double.MaxValue, ErrorMessage = ValidationRules.PriceMinValueMessage)]
-    public double? Price { get; init; }
+    [Range(typeof(decimal), "0.01", "79228162514264337593543950335", ErrorMessage = ValidationRules.PriceMinValueMessage)]
+    public decimal? Price { get; init; }
 }

@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using Bogus;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 using ModernTenon.Api.Host;
@@ -51,7 +52,7 @@ public class ProductsEndpointTests : TestFixture<Program, DatabaseContext>
         response.Should().NotBeNull();
         response!.Id.Should().Be(existedProduct.Id);
         response.Name.Should().Be(existedProduct.Name);
-        var convertedCents = existedProduct.PriceInCents / 100;
+        var convertedCents = existedProduct.PriceInCents / 100m;
         response.Price.Should().Be(convertedCents);
     }
 
@@ -79,7 +80,7 @@ public class ProductsEndpointTests : TestFixture<Program, DatabaseContext>
     {
         // Arrange
         var existedProduct = await DbContext.Products.FirstAsync();
-        var request = new UpdateProductRequest { Name = $"{Guid.NewGuid()}", Price = 100 };
+        var request = new UpdateProductRequest { Name = $"{Guid.NewGuid()}", Price = 100m };
 
         // Act
         var responseContent = await HttpClient.PutAsJsonAsync($"/api/products/{existedProduct.Id}/", request);
@@ -93,8 +94,27 @@ public class ProductsEndpointTests : TestFixture<Program, DatabaseContext>
 
         await DbContext.Entry(existedProduct).ReloadAsync();
         existedProduct.Name.Should().Be(request.Name);
-        var priceInCents = (ulong)(request.Price.Value * 100);
+        var priceInCents = (ulong)(request.Price.Value * 100m);
         existedProduct.PriceInCents.Should().Be(priceInCents);
+    }
+
+    [Fact]
+    public async Task ExecuteSqlRaw_InvalidProductRow_ThrowsDueToDatabaseConstraint()
+    {
+        // Arrange
+        var invalidName = "ab";
+
+        // Act
+        var action = async () =>
+        {
+            await DbContext.Database.ExecuteSqlAsync($"""
+                INSERT INTO Products (Id, Name, PriceInCents)
+                VALUES ({Guid.NewGuid()}, {invalidName}, {100UL})
+                """);
+        };
+
+        // Assert
+        await action.Should().ThrowAsync<SqliteException>();
     }
 
     private static List<ProductRecord> GenerateFakeProducts()
@@ -102,7 +122,7 @@ public class ProductsEndpointTests : TestFixture<Program, DatabaseContext>
         var productFaker = new Faker<ProductRecord>()
             .RuleFor(p => p.Id, f => Guid.NewGuid())
             .RuleFor(p => p.Name, f => f.Commerce.ProductName())
-            .RuleFor(p => p.PriceInCents, f => (ulong)Math.Round(f.Random.Double(10, 1000), 2) * 100);
+            .RuleFor(p => p.PriceInCents, f => (ulong)(decimal.Round(f.Random.Decimal(10, 1000), 2) * 100m));
 
         return productFaker.Generate(3);
     }

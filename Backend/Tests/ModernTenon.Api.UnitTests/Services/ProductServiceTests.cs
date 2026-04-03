@@ -1,5 +1,4 @@
-﻿using AutoMapper;
-using Bogus;
+﻿using Bogus;
 using Moq;
 using Xunit;
 using FluentAssertions;
@@ -14,7 +13,6 @@ namespace ModernTenon.Api.UnitTests;
 public class ProductServiceTests
 {
     private readonly Mock<IProductsRepository> _mockProductsRepository;
-    private readonly Mock<IMapper> _mockMapper;
     private readonly ProductService _service;
     private readonly Faker<ProductRecord> _productRecordFaker;
     private readonly Faker<ProductEntity> _productEntityFaker;
@@ -22,8 +20,7 @@ public class ProductServiceTests
     public ProductServiceTests()
     {
         _mockProductsRepository = new Mock<IProductsRepository>();
-        _mockMapper = new Mock<IMapper>();
-        _service = new ProductService(_mockMapper.Object, _mockProductsRepository.Object);
+        _service = new ProductService(_mockProductsRepository.Object);
 
         _productRecordFaker = new Faker<ProductRecord>()
             .RuleFor(o => o.Id, f => f.Random.Guid())
@@ -36,7 +33,7 @@ public class ProductServiceTests
             .CustomInstantiator(f => new ProductEntity(
                 f.Random.Guid(),
                 f.Commerce.ProductName(),
-                f.Random.Double(10, 1000)));
+                decimal.Round(f.Random.Decimal(10, 1000), 2)));
     }
 
     [Fact]
@@ -46,12 +43,9 @@ public class ProductServiceTests
         var expectedSize = 10;
         var pagination = new PaginationEntity(1, expectedSize);
         var productRecords = _productRecordFaker.Generate(expectedSize);
-        var productEntities = _productEntityFaker.Generate(expectedSize);
 
         _mockProductsRepository.Setup(repo => repo.GetListAsync(pagination.Page, pagination.Limit))
             .ReturnsAsync((expectedSize, productRecords));
-        _mockMapper.Setup(mapper => mapper.Map<IEnumerable<ProductEntity>>(It.IsAny<IEnumerable<ProductRecord>>()))
-            .Returns(productEntities);
 
         // Act
         var result = await _service.GetListAsync(pagination);
@@ -60,8 +54,11 @@ public class ProductServiceTests
         result.Should().NotBeNull();
         result.Should().BeOfType<PaginationResultEntity<ProductEntity>>();
         result.Results.Should().HaveCount(expectedSize);
+        result.Results.Should().BeEquivalentTo(productRecords.Select(record =>
+            record.PriceInCents.HasValue
+                ? new ProductEntity(record.Id, record.Name, record.PriceInCents.Value / 100m)
+                : new ProductEntity(record.Id, record.Name)));
         _mockProductsRepository.Verify(repo => repo.GetListAsync(pagination.Page, pagination.Limit), Times.Once);
-        _mockMapper.Verify(mapper => mapper.Map<IEnumerable<ProductEntity>>(It.IsAny<IEnumerable<ProductRecord>>()), Times.Once);
     }
 
     [Fact]
@@ -70,12 +67,9 @@ public class ProductServiceTests
         // Arrange
         var id = Guid.NewGuid();
         var productRecord = _productRecordFaker.Generate();
-        var productEntity = _productEntityFaker.Generate();
 
         _mockProductsRepository.Setup(repo => repo.GetAsync(id))
             .ReturnsAsync(productRecord);
-        _mockMapper.Setup(mapper => mapper.Map<ProductEntity>(It.IsAny<ProductRecord>()))
-            .Returns(productEntity);
 
         // Act
         var result = await _service.GetAsync(id);
@@ -83,8 +77,11 @@ public class ProductServiceTests
         // Assert
         result.Should().NotBeNull();
         result.Should().BeOfType<ProductEntity>();
+        result.Should().BeEquivalentTo(
+            productRecord.PriceInCents.HasValue
+                ? new ProductEntity(productRecord.Id, productRecord.Name, productRecord.PriceInCents.Value / 100m)
+                : new ProductEntity(productRecord.Id, productRecord.Name));
         _mockProductsRepository.Verify(repo => repo.GetAsync(id), Times.Once);
-        _mockMapper.Verify(mapper => mapper.Map<ProductEntity>(productRecord), Times.Once);
     }
 
     [Fact]
@@ -104,16 +101,21 @@ public class ProductServiceTests
     {
         // Arrange
         var productEntityToCreate = _productEntityFaker.Generate();
-        var productRecordToCreate = _productRecordFaker.Generate();
         var createdProductRecord = _productRecordFaker.Generate();
-        var createdProductEntity = _productEntityFaker.Generate();
+        var expectedRecordToCreate = new ProductRecord
+        {
+            Id = productEntityToCreate.Id,
+            Name = productEntityToCreate.Name,
+            PriceInCents = productEntityToCreate.Price.HasValue
+                ? checked((ulong)(productEntityToCreate.Price.Value * 100m))
+                : null
+        };
 
-        _mockMapper.Setup(mapper => mapper.Map<ProductRecord>(productEntityToCreate))
-            .Returns(productRecordToCreate);
-        _mockProductsRepository.Setup(repo => repo.CreateAsync(productRecordToCreate))
+        _mockProductsRepository.Setup(repo => repo.CreateAsync(It.Is<ProductRecord>(record =>
+                record.Id == expectedRecordToCreate.Id &&
+                record.Name == expectedRecordToCreate.Name &&
+                record.PriceInCents == expectedRecordToCreate.PriceInCents)))
             .ReturnsAsync(createdProductRecord);
-        _mockMapper.Setup(mapper => mapper.Map<ProductEntity>(createdProductRecord))
-            .Returns(createdProductEntity);
 
         // Act
         var result = await _service.CreateAsync(productEntityToCreate);
@@ -121,9 +123,14 @@ public class ProductServiceTests
         // Assert
         result.Should().NotBeNull();
         result.Should().BeOfType<ProductEntity>();
-        _mockMapper.Verify(mapper => mapper.Map<ProductRecord>(productEntityToCreate), Times.Once);
-        _mockProductsRepository.Verify(repo => repo.CreateAsync(productRecordToCreate), Times.Once);
-        _mockMapper.Verify(mapper => mapper.Map<ProductEntity>(createdProductRecord), Times.Once);
+        result.Should().BeEquivalentTo(
+            createdProductRecord.PriceInCents.HasValue
+                ? new ProductEntity(createdProductRecord.Id, createdProductRecord.Name, createdProductRecord.PriceInCents.Value / 100m)
+                : new ProductEntity(createdProductRecord.Id, createdProductRecord.Name));
+        _mockProductsRepository.Verify(repo => repo.CreateAsync(It.Is<ProductRecord>(record =>
+            record.Id == expectedRecordToCreate.Id &&
+            record.Name == expectedRecordToCreate.Name &&
+            record.PriceInCents == expectedRecordToCreate.PriceInCents)), Times.Once);
     }
 
     [Fact]
@@ -133,16 +140,11 @@ public class ProductServiceTests
         var productEntityToUpdate = _productEntityFaker.Generate();
         var productRecordToUpdate = _productRecordFaker.Generate();
         var updatedProductRecord = _productRecordFaker.Generate();
-        var updatedProductEntity = _productEntityFaker.Generate();
 
         _mockProductsRepository.Setup(repo => repo.GetAsync(productEntityToUpdate.Id))
             .ReturnsAsync(productRecordToUpdate);
-        _mockMapper.Setup(mapper => mapper.Map(productEntityToUpdate, productRecordToUpdate))
-            .Returns(productRecordToUpdate);
         _mockProductsRepository.Setup(repo => repo.UpdateAsync(productRecordToUpdate))
             .ReturnsAsync(updatedProductRecord);
-        _mockMapper.Setup(mapper => mapper.Map<ProductEntity>(updatedProductRecord))
-            .Returns(updatedProductEntity);
 
         // Act
         var result = await _service.UpdateAsync(productEntityToUpdate.Id, productEntityToUpdate);
@@ -150,9 +152,54 @@ public class ProductServiceTests
         // Assert
         result.Should().NotBeNull();
         result.Should().BeOfType<ProductEntity>();
+        result.Should().BeEquivalentTo(
+            updatedProductRecord.PriceInCents.HasValue
+                ? new ProductEntity(updatedProductRecord.Id, updatedProductRecord.Name, updatedProductRecord.PriceInCents.Value / 100m)
+                : new ProductEntity(updatedProductRecord.Id, updatedProductRecord.Name));
+        productRecordToUpdate.Name.Should().Be(productEntityToUpdate.Name);
+        productRecordToUpdate.PriceInCents.Should().Be(
+            productEntityToUpdate.Price.HasValue
+                ? checked((ulong)(productEntityToUpdate.Price.Value * 100m))
+                : null);
         _mockProductsRepository.Verify(repo => repo.GetAsync(productEntityToUpdate.Id), Times.Once);
-        _mockMapper.Verify(mapper => mapper.Map(productEntityToUpdate, productRecordToUpdate), Times.Once);
         _mockProductsRepository.Verify(repo => repo.UpdateAsync(productRecordToUpdate), Times.Once);
-        _mockMapper.Verify(mapper => mapper.Map<ProductEntity>(updatedProductRecord), Times.Once);
+    }
+
+    [Fact]
+    public void ProductEntity_WithMoreThanTwoDecimals_ThrowsArgumentOutOfRangeException()
+    {
+        // Act
+        var action = () => new ProductEntity(Guid.NewGuid(), "Valid Name", 10.999m);
+
+        // Assert
+        action.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*cannot have more than 2 decimal places*");
+    }
+
+    [Fact]
+    public void ProductEntity_WithShortName_ThrowsArgumentException()
+    {
+        // Act
+        var action = () => new ProductEntity(Guid.NewGuid(), "ab");
+
+        // Assert
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*at least 3 characters long*");
+    }
+
+    [Fact]
+    public void ProductRecord_WithZeroPriceInCents_ThrowsArgumentOutOfRangeException()
+    {
+        // Act
+        var action = () => new ProductRecord
+        {
+            Id = Guid.NewGuid(),
+            Name = "Valid Name",
+            PriceInCents = 0
+        };
+
+        // Assert
+        action.Should().Throw<ArgumentOutOfRangeException>()
+            .WithMessage("*must be greater than zero*");
     }
 }

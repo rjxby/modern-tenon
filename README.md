@@ -1,40 +1,146 @@
-# Reference Implementation: ModernTenon API
+# ModernTenon API
 
-The ModernTenon API stands as a comprehensive reference implementation, showcasing the application of industry-standard practices and architectural patterns in backend development using .NET technologies. This project is conceptualized not for live deployment but as an illustrative resource to elucidate the intricacies of designing and building robust APIs.
+ModernTenon is a small products API built with ASP.NET Core minimal APIs, Entity Framework Core, and SQLite. The current codebase targets the latest project upgrades in this repository: `.NET 10` and `EF Core 10`.
 
-## Purpose
+## What Is In The Repo
 
-Crafted to exemplify the adept utilization of .NET technologies, the ModernTenon API serves as a blueprint for developing scalable and maintainable backend solutions. It embodies a culmination of best practices and methodologies, offering insight into the implementation of key features essential for modern web applications.
+- `Backend/Api/Host`: HTTP host, endpoint mapping, Swagger, and app configuration.
+- `Backend/Api/Services`: application service layer and mapping between API/domain models.
+- `Backend/Api/Repositories`: EF Core data access, SQLite context, and migrations.
+- `Backend/Tests`: unit tests and integration tests.
 
-## Key Features
+## Current Stack
 
-- **Layered Architecture**: Adopting a structured approach, the project delineates responsibilities into discrete layers, fostering code maintainability and extensibility.
-- **CRUD Operations**: The API seamlessly executes Create, Read, Update, and Delete operations on product entities, demonstrating adeptness in data manipulation and persistence.
-- **Documentation**: Integration with Swagger facilitates comprehensive API documentation, empowering developers with clear insights into available endpoints and usage guidelines.
-- **Testing**: Rigorous unit tests and integration tests validate the robustness and reliability of the API, underlining a commitment to software quality.
-- **Docker Deployment**: Leveraging Docker containerization streamlines deployment and ensures consistent environments across diverse platforms, accentuating proficiency in containerized application development.
+- .NET 10
+- ASP.NET Core minimal APIs
+- Entity Framework Core 10
+- SQLite
+- Swagger / Swashbuckle
+- xUnit, FluentAssertions, Moq, Bogus
 
-## Usage
+Central package versions are managed in [`Backend/Directory.Packages.props`](/Backend/Directory.Packages.props).
 
-While not intended for direct deployment, the ModernTenon API serves as an educational resource and a foundation for constructing similar applications. Developers can delve into the codebase, architecture, and implementation intricacies to gain a deeper understanding of building resilient and scalable APIs with .NET technologies.
+## API Surface
 
-## Technologies Used
+The API exposes product endpoints under `/api/products`.
 
-- **ASP.NET Core 8.0**
-- **Entity Framework Core**
-- **SQLite**
-- **Docker**
+- `GET /api/products?page=1&limit=10`: list products with pagination metadata.
+- `GET /api/products/{id}`: fetch a single product.
+- `POST /api/products`: create a product.
+- `PUT /api/products/{id}`: update a product.
 
-## Getting Started
+### Request Models
 
-To explore the ModernTenon API:
+`POST /api/products`
 
-1. Clone the repository.
-2. Peruse the source code, documentation, and tests to grasp the implementation nuances.
-3. Experiment with running the API locally using Docker for development purposes.
+```json
+{
+  "name": "Keyboard"
+}
+```
 
-## Contribution
+`PUT /api/products/{id}`
 
-This project welcomes contributions and feedback. While not intended for live deployment, suggestions for enhancements and improvements are encouraged. Open discussions via issues or pull requests are welcomed to foster collaboration and refinement of this reference implementation.
+```json
+{
+  "name": "Mechanical Keyboard",
+  "price": 149.99
+}
+```
 
-Thank you for considering the ModernTenon API as a testament to the capabilities and insights into modern backend development practices.
+Validation currently requires:
+
+- `name` to be present and at least 3 characters long.
+- `price` on update to be present and greater than `0`.
+
+## Local Development
+
+### Prerequisites
+
+- .NET 10 SDK
+- `dotnet-ef` CLI tool if you want to apply or create migrations through the `Makefile`
+
+### Run The API
+
+From the repository root:
+
+```bash
+dotnet restore Backend/ModernTenon.sln
+dotnet run --project Backend/Api/Host
+```
+
+The API applies pending EF Core migrations automatically during startup. For local `dotnet run`, the default SQLite file is configured in [`Backend/Api/Host/appsettings.json`](/Backend/Api/Host/appsettings.json):
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Data Source=Backend/Api/Host/data/modern-tenon.db"
+  }
+}
+```
+
+This is now explicit: the configured path is used as-is. Override it in any environment with `ConnectionStrings__DefaultConnection`.
+
+Default local URLs from [`launchSettings.json`](/Backend/Api/Host/Properties/launchSettings.json):
+
+- `http://localhost:5108`
+- `https://localhost:7001`
+
+Swagger UI is enabled in Development at:
+
+- `https://localhost:7001/swagger`
+- `http://localhost:5108/swagger`
+
+## Makefile Shortcuts
+
+The repository includes a [`Makefile`](/Makefile) with common EF Core commands:
+
+```bash
+make add-migration name=YourMigrationName
+make remove-migration
+make apply-migrations
+```
+
+For a one-command container run with persisted SQLite storage:
+
+```bash
+make dev-run
+```
+
+That builds the image with Podman and runs it with a named volume mounted at `/data`. The image sets `ConnectionStrings__DefaultConnection=Data Source=/data/modern-tenon.db`, so the container owns the DB path and applies migrations on startup. The same contract works with Docker:
+
+```bash
+docker build -t modern-tenon-api-dev -f Backend/Api/Host/Dockerfile ./Backend
+docker run --mount type=volume,src=moderntenon-data,dst=/data -p 8080:8080 modern-tenon-api-dev
+```
+
+## Tests
+
+Run all tests:
+
+```bash
+dotnet test Backend/ModernTenon.sln
+```
+
+The integration test suite boots the API through `WebApplicationFactory` and replaces the configured database with an in-memory SQLite database.
+
+For a quick end-to-end smoke test against the real HTTP server:
+
+```bash
+make smoke-test
+```
+
+To target a specific host:
+
+```bash
+make smoke-test HOST=http://127.0.0.1:8080
+```
+
+`make smoke-test` assumes your API is already running and only sends HTTP requests. It does not start the app or touch the database.
+
+That script will:
+
+- call `GET /api/products`
+- create a product with `POST /api/products`
+- fetch it with `GET /api/products/{id}`
+- update it with `PUT /api/products/{id}`

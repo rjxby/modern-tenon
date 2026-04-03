@@ -1,22 +1,19 @@
-﻿using AutoMapper;
-
-using ModernTenon.Api.Repositories.Contracts;
+﻿using ModernTenon.Api.Repositories.Contracts;
 using ModernTenon.Api.Repositories.Contracts.Records;
 using ModernTenon.Api.Services.Contracts;
 using ModernTenon.Api.Services.Contracts.Entities;
 
 namespace ModernTenon.Api.Services.Implimentation.Services;
 
-public class ProductService(IMapper mapper, IProductsRepository productsRepository) : IProductService
+public class ProductService(IProductsRepository productsRepository) : IProductService
 {
-    private readonly IMapper _mapper = mapper;
     private readonly IProductsRepository _productsRepository = productsRepository;
 
     public async Task<PaginationResultEntity<ProductEntity>> GetListAsync(PaginationEntity pagination)
     {
         var (size, foundRecords) = await _productsRepository.GetListAsync(pagination.Page, pagination.Limit);
 
-        var resultRecords = _mapper.Map<IEnumerable<ProductEntity>>(foundRecords);
+        var resultRecords = foundRecords.Select(ProductsFactory.ToEntity);
 
         var result = new PaginationResultEntity<ProductEntity>(pagination.Page, pagination.Limit, size, resultRecords);
         return result;
@@ -25,27 +22,28 @@ public class ProductService(IMapper mapper, IProductsRepository productsReposito
     public async Task<ProductEntity> GetAsync(Guid id)
     {
         var record = await GetByIdAsync(id);
-        return _mapper.Map<ProductEntity>(record);
+        return ProductsFactory.ToEntity(record);
     }
 
     public async Task<ProductEntity> CreateAsync(ProductEntity product)
     {
-        var recordToCreate = _mapper.Map<ProductRecord>(product);
+        var recordToCreate = ProductsFactory.ToRecord(product);
         var createdRecord = await _productsRepository.CreateAsync(recordToCreate);
-        return _mapper.Map<ProductEntity>(createdRecord);
+        return ProductsFactory.ToEntity(createdRecord);
     }
 
     public async Task<ProductEntity> UpdateAsync(Guid id, ProductEntity product)
     {
         var recordToUpdate = await GetByIdAsync(id);
 
-        _mapper.Map(product, recordToUpdate);
+        recordToUpdate.Name = product.Name;
+        recordToUpdate.PriceInCents = ProductsFactory.ToPriceInCents(product.Price);
 
         var updatedRecord = await _productsRepository.UpdateAsync(recordToUpdate);
-        return _mapper.Map<ProductEntity>(updatedRecord);
+        return ProductsFactory.ToEntity(updatedRecord);
     }
 
-    private async Task<ProductRecord> GetByIdAsync(Guid id) 
+    private async Task<ProductRecord> GetByIdAsync(Guid id)
     {
         var record = await _productsRepository.GetAsync(id);
         if (record == null)

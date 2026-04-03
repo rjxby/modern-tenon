@@ -11,14 +11,14 @@ using ModernTenon.Api.Repositories.Implimentation;
 namespace ModernTenon.Api.Repositories.Implimentation.Migrations
 {
     [DbContext(typeof(DatabaseContext))]
-    [Migration("20240330204115_Initial")]
+    [Migration("20260401133952_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.3");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.5");
 
             modelBuilder.Entity("ModernTenon.Api.Repositories.Contracts.Records.ProductRecord", b =>
                 {
@@ -28,6 +28,7 @@ namespace ModernTenon.Api.Repositories.Implimentation.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
                     b.Property<ulong?>("PriceInCents")
@@ -35,7 +36,12 @@ namespace ModernTenon.Api.Repositories.Implimentation.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Products");
+                    b.ToTable("Products", t =>
+                        {
+                            t.HasCheckConstraint("CK_Products_Name_MinLength", "length(Name) >= 3");
+
+                            t.HasCheckConstraint("CK_Products_PriceInCents_Positive", "\"PriceInCents\" IS NULL OR \"PriceInCents\" >= 1");
+                        });
                 });
 #pragma warning restore 612, 618
         }

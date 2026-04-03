@@ -16,12 +16,14 @@ namespace ModernTenon.Api.Repositories.Implimentation.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "TEXT", nullable: false),
-                    Name = table.Column<string>(type: "TEXT", nullable: false),
+                    Name = table.Column<string>(type: "TEXT", maxLength: 200, nullable: false),
                     PriceInCents = table.Column<ulong>(type: "INTEGER", nullable: true)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("PK_Products", x => x.Id);
+                    table.CheckConstraint("CK_Products_Name_MinLength", "length(Name) >= 3");
+                    table.CheckConstraint("CK_Products_PriceInCents_Positive", "\"PriceInCents\" IS NULL OR \"PriceInCents\" >= 1");
                 });
         }
 

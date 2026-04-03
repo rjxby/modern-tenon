@@ -8,8 +8,6 @@ public static class SetupPresentationLayer
 
         services.AddExceptionHandler<ExceptionHandler>();
 
-        services.AddAutoMapper(typeof(MappingProfile));
-
         return services;
     }
 }
